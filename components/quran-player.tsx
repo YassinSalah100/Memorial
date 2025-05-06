@@ -15,17 +15,36 @@ interface SurahInfo {
 }
 
 export default function QuranPlayer() {
-  const [isPlaying, setIsPlaying] = useState(false)
+  const [isPlaying, setIsPlaying] = useState(true) // Initialize as true to indicate intent to play
   const [duration, setDuration] = useState(0)
   const [currentTime, setCurrentTime] = useState(0)
   const [volume, setVolume] = useState(70)
   const [isMuted, setIsMuted] = useState(false)
-  const [currentSurahIndex, setCurrentSurahIndex] = useState(0)
+  const [currentSurahIndex, setCurrentSurahIndex] = useState(0) // Default to first surah (Al-Mulk)
   const [showVolumeControl, setShowVolumeControl] = useState(false)
   const [isAudioLoaded, setIsAudioLoaded] = useState(false)
-  const [userInteracted, setUserInteracted] = useState(false)
+  const [playAttempted, setPlayAttempted] = useState(false)
+  const [playFailed, setPlayFailed] = useState(false)
   const audioRef = useRef<HTMLAudioElement>(null)
+  const audioContextRef = useRef<AudioContext | null>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
   const isMobile = useMobile()
+  
+  // Create and store the audio context
+  useEffect(() => {
+    // Create audio context on component mount
+    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    if (AudioContextClass) {
+      audioContextRef.current = new AudioContextClass();
+    }
+    
+    // Cleanup on unmount
+    return () => {
+      if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+        audioContextRef.current.close();
+      }
+    };
+  }, []);
 
   // Surah information
   const surahs: SurahInfo[] = [
@@ -54,170 +73,248 @@ export default function QuranPlayer() {
 
   const currentSurah = surahs[currentSurahIndex]
 
+  // Create a more aggressive audio unlock approach 
   useEffect(() => {
-    const audio = audioRef.current
-    if (!audio) return
+    // This function will be called both on load and after user interactions
+    const forceAudioUnlock = () => {
+      // Try to resume the audio context if suspended
+      if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+        audioContextRef.current.resume().catch(err => console.log("Failed to resume audio context:", err));
+      }
+      
+      // Create and play multiple silent sounds to unlock audio
+      try {
+        // Method 1: Simple audio element with base64 encoded silent sound
+        for (let i = 0; i < 3; i++) {
+          const silentAudio = new Audio();
+          silentAudio.src = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
+          silentAudio.volume = 0.01;
+          silentAudio.play().catch(() => {});
+        }
+        
+        // Method 2: Using AudioContext
+        if (audioContextRef.current) {
+          const oscillator = audioContextRef.current.createOscillator();
+          const gainNode = audioContextRef.current.createGain();
+          gainNode.gain.value = 0.01; // Nearly silent
+          oscillator.connect(gainNode);
+          gainNode.connect(audioContextRef.current.destination);
+          oscillator.start(0);
+          oscillator.stop(0.001); // Very short sound
+        }
+        
+        // After unlocking audio, try to play the main audio
+        setTimeout(attemptToPlayAudio, 100);
+      } catch (err) {
+        console.log("Error in audio unlock:", err);
+      }
+    };
+
+    // Run immediately
+    forceAudioUnlock();
+    
+    // Also run on various user interactions
+    const userInteractionEvents = ['touchstart', 'touchend', 'mousedown', 'keydown', 'click', 'pointerdown'];
+    
+    const handleUserInteraction = () => {
+      forceAudioUnlock();
+      
+      // If we've had a play failure before, try again on user interaction
+      if (playFailed) {
+        setPlayAttempted(false);
+        setPlayFailed(false);
+        setTimeout(attemptToPlayAudio, 10);
+      }
+    };
+    
+    // Add listeners for all events
+    userInteractionEvents.forEach(event => {
+      document.addEventListener(event, handleUserInteraction);
+    });
+    
+    // Set up a repeated attempt to play in case the first attempt fails
+    const playInterval = setInterval(() => {
+      if (!isPlaying && audioRef.current && isAudioLoaded && !playFailed) {
+        attemptToPlayAudio();
+      }
+    }, 1000); // Try every second until successful or failed
+    
+    return () => {
+      // Clean up all event listeners and intervals
+      userInteractionEvents.forEach(event => {
+        document.removeEventListener(event, handleUserInteraction);
+      });
+      clearInterval(playInterval);
+    };
+  }, [isAudioLoaded, isPlaying, playFailed]);
+
+  // Function to attempt playing audio
+  const attemptToPlayAudio = () => {
+    const audio = audioRef.current;
+    if (!audio || !isAudioLoaded || playAttempted) return;
+    
+    setPlayAttempted(true);
+    
+    // Force audio to the beginning if it's not already
+    if (audio.currentTime > 0) {
+      audio.currentTime = 0;
+    }
+    
+    // Set autoplay attribute and load again to try to trigger autoplay
+    audio.autoplay = true;
+    audio.load();
+    
+    // Then try explicit play
+    audio.play()
+      .then(() => {
+        setIsPlaying(true);
+        console.log("Autoplay successful");
+        if (containerRef.current) {
+          containerRef.current.classList.remove("pulse-animation");
+        }
+      })
+      .catch((error) => {
+        console.log("Autoplay prevented:", error);
+        setPlayFailed(true);
+        // Make UI highly visible that it needs to be played
+        if (containerRef.current) {
+          containerRef.current.classList.add("pulse-animation");
+        }
+      });
+  };
+
+  // Setup audio event listeners
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
 
     const setAudioData = () => {
-      setDuration(audio.duration)
-      setIsAudioLoaded(true)
+      setDuration(audio.duration);
+      setIsAudioLoaded(true);
       
-      // Attempt to autoplay when audio is loaded, but only if user hasn't interacted
-      if (!userInteracted) {
-        audio.play().then(() => {
-          setIsPlaying(true)
-        }).catch((error) => {
-          console.log("Autoplay prevented:", error)
-          // Most browsers require user interaction before autoplay
-        })
+      // Try to play as soon as audio is loaded
+      if (!playAttempted) {
+        attemptToPlayAudio();
       }
-    }
+    };
 
     const setAudioTime = () => {
-      setCurrentTime(audio.currentTime)
-    }
+      setCurrentTime(audio.currentTime);
+    };
 
     const setAudioEnd = () => {
-      setIsPlaying(false)
-    }
+      setIsPlaying(false);
+      // Auto-play next surah
+      changeSurah("next");
+    };
 
     // Events
-    audio.addEventListener("loadeddata", setAudioData)
-    audio.addEventListener("timeupdate", setAudioTime)
-    audio.addEventListener("ended", setAudioEnd)
+    audio.addEventListener("loadeddata", setAudioData);
+    audio.addEventListener("timeupdate", setAudioTime);
+    audio.addEventListener("ended", setAudioEnd);
+    
+    // Add more event listeners for better play state tracking
+    audio.addEventListener("play", () => setIsPlaying(true));
+    audio.addEventListener("pause", () => setIsPlaying(false));
 
-    // Set volume but don't autoplay here
-    audio.volume = volume / 100
-
-    return () => {
-      audio.removeEventListener("loadeddata", setAudioData)
-      audio.removeEventListener("timeupdate", setAudioTime)
-      audio.removeEventListener("ended", setAudioEnd)
-    }
-  }, [volume, currentSurahIndex, userInteracted])
-
-  // Add event listeners for user interaction with the page
-  useEffect(() => {
-    const handleUserInteraction = () => {
-      if (!userInteracted) {
-        setUserInteracted(true)
-        
-        // If audio is loaded but not playing yet (due to autoplay restrictions),
-        // try playing it on the first user interaction
-        if (isAudioLoaded && !isPlaying && audioRef.current) {
-          audioRef.current.play()
-            .then(() => {
-              setIsPlaying(true)
-            })
-            .catch(error => {
-              console.log("Play on interaction failed:", error)
-            })
-        }
-      }
-    }
-
-    // Listen for common interaction events
-    document.addEventListener("click", handleUserInteraction)
-    document.addEventListener("touchstart", handleUserInteraction)
-    document.addEventListener("keydown", handleUserInteraction)
+    // Set volume
+    audio.volume = volume / 100;
+    
+    // Set autoplay attribute directly on the element
+    audio.autoplay = true;
 
     return () => {
-      document.removeEventListener("click", handleUserInteraction)
-      document.removeEventListener("touchstart", handleUserInteraction)
-      document.removeEventListener("keydown", handleUserInteraction)
-    }
-  }, [isAudioLoaded, isPlaying, userInteracted])
+      audio.removeEventListener("loadeddata", setAudioData);
+      audio.removeEventListener("timeupdate", setAudioTime);
+      audio.removeEventListener("ended", setAudioEnd);
+      audio.removeEventListener("play", () => setIsPlaying(true));
+      audio.removeEventListener("pause", () => setIsPlaying(false));
+    };
+  }, [volume, currentSurahIndex, playAttempted]);
 
   const togglePlay = () => {
-    const audio = audioRef.current
-    if (!audio) return
-
-    // Mark that the user has explicitly interacted with the player
-    setUserInteracted(true)
+    const audio = audioRef.current;
+    if (!audio) return;
 
     if (isPlaying) {
-      audio.pause()
-      setIsPlaying(false)
+      audio.pause();
+      setIsPlaying(false);
     } else {
       audio
         .play()
         .then(() => {
-          setIsPlaying(true)
+          setIsPlaying(true);
+          // Remove pulse animation when user manually plays
+          if (containerRef.current) {
+            containerRef.current.classList.remove("pulse-animation");
+          }
         })
         .catch((error) => {
-          console.log("Playback prevented:", error)
-          // Handle the error, maybe show a message to the user
-        })
+          console.log("Playback prevented:", error);
+          // Add pulse animation to indicate user action needed
+          if (containerRef.current) {
+            containerRef.current.classList.add("pulse-animation");
+          }
+        });
     }
-  }
+  };
 
   const toggleMute = () => {
-    const audio = audioRef.current
-    if (!audio) return
-
-    // Mark that the user has explicitly interacted with the player
-    setUserInteracted(true)
+    const audio = audioRef.current;
+    if (!audio) return;
     
-    audio.muted = !isMuted
-    setIsMuted(!isMuted)
-  }
+    audio.muted = !isMuted;
+    setIsMuted(!isMuted);
+  };
 
   const handleVolumeChange = (value: number[]) => {
-    const audio = audioRef.current
-    if (!audio) return
-
-    // Mark that the user has explicitly interacted with the player
-    setUserInteracted(true)
+    const audio = audioRef.current;
+    if (!audio) return;
     
-    const newVolume = value[0]
-    audio.volume = newVolume / 100
-    setVolume(newVolume)
+    const newVolume = value[0];
+    audio.volume = newVolume / 100;
+    setVolume(newVolume);
 
     if (newVolume === 0) {
-      setIsMuted(true)
+      setIsMuted(true);
     } else if (isMuted) {
-      setIsMuted(false)
+      setIsMuted(false);
     }
-  }
+  };
 
   const handleTimeChange = (value: number[]) => {
-    const audio = audioRef.current
-    if (!audio) return
-
-    // Mark that the user has explicitly interacted with the player
-    setUserInteracted(true)
+    const audio = audioRef.current;
+    if (!audio) return;
     
-    audio.currentTime = value[0]
-    setCurrentTime(value[0])
-  }
+    audio.currentTime = value[0];
+    setCurrentTime(value[0]);
+  };
 
   const changeSurah = (direction: "next" | "prev") => {
-    const audio = audioRef.current
-    if (!audio) return
-
-    // Mark that the user has explicitly interacted with the player
-    setUserInteracted(true)
+    const audio = audioRef.current;
+    if (!audio) return;
     
-    let newIndex = currentSurahIndex
+    let newIndex = currentSurahIndex;
     if (direction === "next") {
-      newIndex = (currentSurahIndex + 1) % surahs.length
+      newIndex = (currentSurahIndex + 1) % surahs.length;
     } else {
-      newIndex = (currentSurahIndex - 1 + surahs.length) % surahs.length
+      newIndex = (currentSurahIndex - 1 + surahs.length) % surahs.length;
     }
 
-    setCurrentSurahIndex(newIndex)
-    setCurrentTime(0)
-    setIsPlaying(false)
-    setIsAudioLoaded(false)
-  }
+    setCurrentSurahIndex(newIndex);
+    setCurrentTime(0);
+    setIsAudioLoaded(false);
+    setPlayAttempted(false);
+    // We'll try to autoplay when the new surah is loaded
+  };
 
   const formatTime = (time: number) => {
-    if (isNaN(time)) return "0:00"
+    if (isNaN(time)) return "0:00";
 
-    const minutes = Math.floor(time / 60)
-    const seconds = Math.floor(time % 60)
-    return `${minutes}:${seconds.toString().padStart(2, "0")}`
-  }
+    const minutes = Math.floor(time / 60);
+    const seconds = Math.floor(time % 60);
+    return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+  };
 
   return (
     <section className="py-8 sm:py-12">
@@ -226,6 +323,7 @@ export default function QuranPlayer() {
         <h3 className="text-lg sm:text-xl text-blue-100 text-center mb-6 sm:mb-8">The Noble Quran</h3>
 
         <motion.div
+          ref={containerRef}
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
@@ -237,7 +335,7 @@ export default function QuranPlayer() {
             <p className="text-xs sm:text-sm text-blue-400">Recited by {currentSurah.reciter}</p>
           </div>
 
-          <audio ref={audioRef} src={currentSurah.audioSrc} preload="metadata" />
+          <audio ref={audioRef} src={currentSurah.audioSrc} preload="auto" />
 
           <div className="flex items-center justify-center gap-3 sm:gap-4 mb-4">
             <button
@@ -330,6 +428,24 @@ export default function QuranPlayer() {
           </div>
         </motion.div>
       </div>
+
+      <style jsx global>{`
+        @keyframes pulse {
+          0% {
+            box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4);
+          }
+          70% {
+            box-shadow: 0 0 0 15px rgba(245, 158, 11, 0);
+          }
+          100% {
+            box-shadow: 0 0 0 0 rgba(245, 158, 11, 0);
+          }
+        }
+        
+        .pulse-animation {
+          animation: pulse 2s infinite;
+        }
+      `}</style>
     </section>
-  )
+  );
 }

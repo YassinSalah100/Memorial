@@ -67,6 +67,9 @@ export default function CharitySection() {
             <div className="absolute left-1/2 -translate-x-1/2 w-16 h-1 bg-gradient-to-r from-transparent via-amber-400 to-transparent mt-2"></div>
           </div>
           <div className="bg-blue-900/20 p-4 sm:p-6 rounded-lg border border-blue-800/30 max-w-2xl mx-auto">
+            <p className="text-sm sm:text-base text-blue-100 italic mb-2">
+              "إذا مات ابن آدم انقطع عمله إلا من ثلاث: صدقة جارية، أو علم ينتفع به، أو ولد صالح يدعو له"
+            </p>
             <p className="text-sm sm:text-base text-blue-100 italic">
               "When a person dies, his deeds come to an end except for three: ongoing charity (sadaqah jariyah),
               beneficial knowledge, or a righteous child who prays for him."
@@ -108,12 +111,14 @@ export default function CharitySection() {
             <p className="text-md sm:text-lg text-blue-100">Sadaqah Jariyah</p>
           </div>
           <div className="mb-4">
-            <h4 className="text-xl sm:text-2xl font-arabic text-white mb-1">تبرع باسم الدكتور عصام</h4>
-            <p className="text-md sm:text-lg text-white">Donate in Dr. Essam's Name</p>
+            <h4 className="text-xl sm:text-2xl font-arabic text-white mb-1">فضل الصدقة</h4>
+            <p className="text-md sm:text-lg text-white">The Virtue of Charity</p>
           </div>
           <p className="text-sm sm:text-base text-blue-100 mb-4 sm:mb-6 max-w-xl mx-auto">
-            Your charitable donations in Dr. Essam's name will continue to benefit him in the hereafter. Choose any
-            charity of your choice and make your donation with the intention of ongoing charity for his soul.
+            الصدقة الجارية هي عمل خيري يستمر نفعه بعد موت صاحبه، مثل بناء المساجد، وحفر الآبار، ونشر العلم، وبناء المستشفيات. الصدقة من أحب الأعمال إلى الله وسبب في مغفرة الذنوب وزيادة الرزق.
+          </p>
+          <p className="text-sm sm:text-base text-blue-100 mb-4 sm:mb-6 max-w-xl mx-auto">
+            Sadaqah Jariyah (ongoing charity) is a charitable act that continues to benefit others even after one's death, such as building mosques, digging wells, spreading knowledge, and establishing hospitals. Charity is among the most beloved deeds to Allah, a means of forgiveness, and a source of increased provision.
           </p>
         </div>
       </div>
