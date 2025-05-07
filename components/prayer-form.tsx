@@ -22,14 +22,25 @@ interface Prayer {
 // Function to fetch prayers from the API
 async function fetchPrayers() {
   try {
-    const response = await fetch("/api/prayers")
+    console.log("Fetching prayers from API")
+    const response = await fetch("/api/prayers", {
+      // Add cache: 'no-store' to prevent caching issues in production
+      cache: "no-store",
+      headers: {
+        pragma: "no-cache",
+        "cache-control": "no-cache",
+      },
+    })
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}))
+      console.error(`API response not OK: ${response.status}`, errorData)
       throw new Error(`Failed to fetch prayers: ${response.status} ${errorData.details || response.statusText}`)
     }
 
-    return await response.json()
+    const data = await response.json()
+    console.log(`Fetched ${data.length} prayers from API`)
+    return data
   } catch (error) {
     console.error("Error fetching prayers", error)
     throw error
@@ -76,8 +87,10 @@ export default function PrayerForm() {
     setDebugInfo(null)
 
     try {
+      console.log("Starting to load prayers")
       // Try to fetch prayers
       const fetchedPrayers = await fetchPrayers()
+      console.log(`Successfully loaded ${fetchedPrayers.length} prayers`)
       setPrayers(fetchedPrayers)
     } catch (error: any) {
       console.error("Failed to fetch prayers", error)
@@ -313,6 +326,9 @@ export default function PrayerForm() {
           )}
         </div>
       </div>
+      {prayers.length > 0 && (
+        <div className="mt-4 text-xs text-blue-400/70 text-center">Showing {prayers.length} prayers</div>
+      )}
     </section>
   )
 }

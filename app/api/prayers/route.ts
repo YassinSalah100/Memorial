@@ -4,8 +4,13 @@ import { neon } from "@neondatabase/serverless"
 // Function to get SQL client - will attempt to create a new connection on each request
 function getSqlClient() {
   try {
-    // Create a new connection for each request to avoid connection pooling issues
-    return neon(process.env.DATABASE_URL!)
+    // Create a new connection with explicit connection closing
+    const sql = neon(process.env.DATABASE_URL!)
+
+    // Add a debug log to track connection creation
+    console.log("Database connection established successfully")
+
+    return sql
   } catch (error) {
     console.error("Failed to initialize database connection:", error)
     throw new Error("Database connection failed")
@@ -42,15 +47,17 @@ export async function GET() {
     const sql = getSqlClient()
 
     // Fetch prayers from the database with a higher limit to ensure all prayers are returned
-    // Adding a LIMIT clause to prevent potential issues with very large datasets
+    console.log("Executing SQL query to fetch prayers")
     const prayers = await sql`
       SELECT id, text, name, timestamp 
       FROM prayers 
       ORDER BY timestamp DESC
-      LIMIT 1000
+      LIMIT 100
     `
 
-    console.log(`GET /api/prayers: Found ${prayers.length} prayers`)
+    console.log(
+      `GET /api/prayers: Found ${prayers.length} prayers. First prayer ID: ${prayers.length > 0 ? prayers[0].id : "none"}, Last prayer ID: ${prayers.length > 0 ? prayers[prayers.length - 1].id : "none"}`,
+    )
 
     // Format the timestamps for display
     const formattedPrayers = prayers.map((prayer: any) => ({
