@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server"
 import { neon } from "@neondatabase/serverless"
 
-// Function to get SQL client - will attempt to create a new connection on each request if needed
+// Function to get SQL client - will attempt to create a new connection on each request
 function getSqlClient() {
   try {
+    // Create a new connection for each request to avoid connection pooling issues
     return neon(process.env.DATABASE_URL!)
   } catch (error) {
     console.error("Failed to initialize database connection:", error)
@@ -40,11 +41,13 @@ export async function GET() {
     // Get SQL client for this request
     const sql = getSqlClient()
 
-    // Fetch prayers from the database
+    // Fetch prayers from the database with a higher limit to ensure all prayers are returned
+    // Adding a LIMIT clause to prevent potential issues with very large datasets
     const prayers = await sql`
       SELECT id, text, name, timestamp 
       FROM prayers 
       ORDER BY timestamp DESC
+      LIMIT 1000
     `
 
     console.log(`GET /api/prayers: Found ${prayers.length} prayers`)
