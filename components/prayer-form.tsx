@@ -19,16 +19,19 @@ interface Prayer {
   name?: string
 }
 
-// Function to fetch prayers from the API
+// Function to fetch prayers from the API with cache-busting
 async function fetchPrayers() {
   try {
-    console.log("Fetching prayers from API")
-    const response = await fetch("/api/prayers", {
+    // Add a timestamp to prevent caching issues, especially with Facebook's fbclid parameter
+    const timestamp = new Date().getTime()
+    console.log(`Fetching prayers from API with timestamp ${timestamp}`)
+
+    const response = await fetch(`/api/prayers?_=${timestamp}`, {
       // Add cache: 'no-store' to prevent caching issues in production
       cache: "no-store",
       headers: {
         pragma: "no-cache",
-        "cache-control": "no-cache",
+        "cache-control": "no-cache, no-store, must-revalidate",
       },
     })
 
@@ -80,6 +83,23 @@ export default function PrayerForm() {
   const { toast } = useToast()
   const isMobile = useMobile()
 
+  // Remove fbclid parameter from URL if present
+  useEffect(() => {
+    // Check if we're in the browser and if the URL contains fbclid
+    if (typeof window !== "undefined" && window.location.href.includes("fbclid")) {
+      // Create a URL object
+      const url = new URL(window.location.href)
+
+      // Delete the fbclid parameter
+      url.searchParams.delete("fbclid")
+
+      // Replace the current URL without the fbclid parameter
+      window.history.replaceState({}, document.title, url.toString())
+
+      console.log("Removed fbclid parameter from URL")
+    }
+  }, [])
+
   // Load prayers when component mounts
   const loadPrayers = async () => {
     setIsLoading(true)
@@ -110,6 +130,17 @@ export default function PrayerForm() {
 
   useEffect(() => {
     loadPrayers()
+
+    // Set up a refresh interval to periodically check for new prayers
+    const refreshInterval = setInterval(
+      () => {
+        console.log("Auto-refreshing prayers")
+        loadPrayers()
+      },
+      5 * 60 * 1000,
+    ) // Refresh every 5 minutes
+
+    return () => clearInterval(refreshInterval)
   }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {

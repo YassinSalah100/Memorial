@@ -17,25 +17,44 @@ function getSqlClient() {
   }
 }
 
-// Helper function to format timestamps
+// Helper function to format timestamps for Egypt timezone
 function formatTimestamp(timestamp: Date): string {
-  const now = new Date()
-  const diff = now.getTime() - timestamp.getTime()
+  try {
+    // Format the timestamp in Egypt timezone (EET/EEST)
+    const egyptTime = new Intl.DateTimeFormat("en-US", {
+      timeZone: "Africa/Cairo",
+      hour: "2-digit",
+      minute: "2-digit",
+      day: "2-digit",
+      month: "short",
+      hour12: true,
+    }).format(timestamp)
 
-  // Convert to seconds
-  const seconds = Math.floor(diff / 1000)
+    const now = new Date()
+    // Convert both dates to Egypt timezone for comparison
+    const egyptNow = new Date(now.toLocaleString("en-US", { timeZone: "Africa/Cairo" }))
+    const egyptTimestamp = new Date(timestamp.toLocaleString("en-US", { timeZone: "Africa/Cairo" }))
 
-  if (seconds < 60) {
-    return "Just now"
-  } else if (seconds < 3600) {
-    const minutes = Math.floor(seconds / 60)
-    return `${minutes} ${minutes === 1 ? "minute" : "minutes"} ago`
-  } else if (seconds < 86400) {
-    const hours = Math.floor(seconds / 3600)
-    return `${hours} ${hours === 1 ? "hour" : "hours"} ago`
-  } else {
-    const days = Math.floor(seconds / 86400)
-    return `${days} ${days === 1 ? "day" : "days"} ago`
+    const diff = egyptNow.getTime() - egyptTimestamp.getTime()
+
+    // Convert to seconds
+    const seconds = Math.floor(diff / 1000)
+
+    if (seconds < 60) {
+      return "Just now"
+    } else if (seconds < 3600) {
+      const minutes = Math.floor(seconds / 60)
+      return `${minutes} ${minutes === 1 ? "minute" : "minutes"} ago`
+    } else if (seconds < 86400) {
+      const hours = Math.floor(seconds / 3600)
+      return `${hours} ${hours === 1 ? "hour" : "hours"} ago`
+    } else {
+      // Return the formatted Egypt time
+      return egyptTime
+    }
+  } catch (error) {
+    console.error("Error formatting timestamp:", error)
+    return "Unknown time"
   }
 }
 
