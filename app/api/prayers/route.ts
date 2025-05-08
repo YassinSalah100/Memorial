@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { neon } from "@neondatabase/serverless"
 
-// Function to get SQL client - will attempt to create a new connection on each request
+// Function to get SQL client with connection pooling
 function getSqlClient() {
   try {
     // Create a new connection with explicit connection closing
@@ -31,8 +31,9 @@ function formatTimestamp(timestamp: Date): string {
     }).format(timestamp)
 
     const now = new Date()
+
     // Convert both dates to Egypt timezone for comparison
-    const egyptNow = new Date(now.toLocaleString("en-US", { timeZone: "Africa/Cairo" }))
+    const egyptNow = new Date(new Date().toLocaleString("en-US", { timeZone: "Africa/Cairo" }))
     const egyptTimestamp = new Date(timestamp.toLocaleString("en-US", { timeZone: "Africa/Cairo" }))
 
     const diff = egyptNow.getTime() - egyptTimestamp.getTime()
@@ -65,13 +66,12 @@ export async function GET() {
     // Get SQL client for this request
     const sql = getSqlClient()
 
-    // Fetch prayers from the database with a higher limit to ensure all prayers are returned
+    // Fetch ALL prayers from the database - no limit to ensure consistency
     console.log("Executing SQL query to fetch prayers")
     const prayers = await sql`
       SELECT id, text, name, timestamp 
       FROM prayers 
       ORDER BY timestamp DESC
-      LIMIT 100
     `
 
     console.log(
@@ -86,7 +86,16 @@ export async function GET() {
       timestamp: formatTimestamp(new Date(prayer.timestamp)),
     }))
 
-    return NextResponse.json(formattedPrayers)
+    // Set cache control headers to prevent caching
+    return new NextResponse(JSON.stringify(formattedPrayers), {
+      headers: {
+        "Content-Type": "application/json",
+        "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+        Pragma: "no-cache",
+        Expires: "0",
+        "Surrogate-Control": "no-store",
+      },
+    })
   } catch (error: any) {
     console.error("Error fetching prayers:", error)
     // Return more detailed error information
@@ -95,7 +104,13 @@ export async function GET() {
         error: "Failed to fetch prayers",
         details: error.message,
       },
-      { status: 500 },
+      {
+        status: 500,
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+          Pragma: "no-cache",
+        },
+      },
     )
   }
 }

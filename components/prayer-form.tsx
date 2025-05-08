@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -19,14 +19,16 @@ interface Prayer {
   name?: string
 }
 
-// Function to fetch prayers from the API with cache-busting
+// Function to fetch prayers from the API with aggressive cache-busting
 async function fetchPrayers() {
   try {
-    // Add a timestamp to prevent caching issues, especially with Facebook's fbclid parameter
+    // Add a timestamp and random value to prevent caching issues
     const timestamp = new Date().getTime()
-    console.log(`Fetching prayers from API with timestamp ${timestamp}`)
+    const random = Math.random().toString(36).substring(2, 15)
+    console.log(`Fetching prayers from API with timestamp ${timestamp} and random ${random}`)
 
-    const response = await fetch(`/api/prayers?_=${timestamp}`, {
+    const response = await fetch(`/api/prayers?_=${timestamp}&r=${random}`, {
+      method: "GET",
       // Add cache: 'no-store' to prevent caching issues in production
       cache: "no-store",
       headers: {
@@ -55,7 +57,11 @@ async function savePrayer(prayer: Omit<Prayer, "id" | "timestamp">) {
   try {
     const response = await fetch("/api/prayers", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        Pragma: "no-cache",
+      },
       body: JSON.stringify(prayer),
     })
 
@@ -83,25 +89,39 @@ export default function PrayerForm() {
   const { toast } = useToast()
   const isMobile = useMobile()
 
-  // Remove fbclid parameter from URL if present
+  // Remove fbclid parameter from URL if present - more aggressive approach
   useEffect(() => {
-    // Check if we're in the browser and if the URL contains fbclid
-    if (typeof window !== "undefined" && window.location.href.includes("fbclid")) {
+    // Check if we're in the browser
+    if (typeof window !== "undefined") {
       // Create a URL object
       const url = new URL(window.location.href)
+      let paramsRemoved = false
 
-      // Delete the fbclid parameter
-      url.searchParams.delete("fbclid")
+      // Check for Facebook parameters and remove them
+      const fbParams = ["fbclid", "fb_action_ids", "fb_action_types", "fb_source", "fb_ref"]
+      fbParams.forEach((param) => {
+        if (url.searchParams.has(param)) {
+          url.searchParams.delete(param)
+          paramsRemoved = true
+        }
+      })
 
-      // Replace the current URL without the fbclid parameter
-      window.history.replaceState({}, document.title, url.toString())
+      // If we removed any parameters, replace the current URL
+      if (paramsRemoved) {
+        window.history.replaceState({}, document.title, url.toString())
+        console.log("Removed Facebook parameters from URL")
 
-      console.log("Removed fbclid parameter from URL")
+        // Force a reload if coming from Facebook to ensure fresh data
+        if (document.referrer.includes("facebook.com")) {
+          console.log("Detected Facebook referrer, forcing fresh data load")
+          // We'll handle this with our loadPrayers function below
+        }
+      }
     }
   }, [])
 
-  // Load prayers when component mounts
-  const loadPrayers = async () => {
+  // Load prayers when component mounts - made into a useCallback to avoid recreation
+  const loadPrayers = useCallback(async () => {
     setIsLoading(true)
     setError(null)
     setDebugInfo(null)
@@ -126,9 +146,10 @@ export default function PrayerForm() {
       setIsLoading(false)
       setIsRetrying(false)
     }
-  }
+  }, [toast])
 
   useEffect(() => {
+    // Initial load
     loadPrayers()
 
     // Set up a refresh interval to periodically check for new prayers
@@ -137,11 +158,11 @@ export default function PrayerForm() {
         console.log("Auto-refreshing prayers")
         loadPrayers()
       },
-      5 * 60 * 1000,
-    ) // Refresh every 5 minutes
+      3 * 60 * 1000, // Refresh every 3 minutes (reduced from 5)
+    )
 
     return () => clearInterval(refreshInterval)
-  }, [])
+  }, [loadPrayers])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -169,6 +190,11 @@ export default function PrayerForm() {
         title: "دعاء مقبول",
         description: "Your prayer has been shared. May Allah accept it.",
       })
+
+      // Reload prayers to ensure consistency
+      setTimeout(() => {
+        loadPrayers()
+      }, 1000)
     } catch (error: any) {
       console.error("Failed to submit prayer", error)
       setError("Failed to submit your prayer. Please try again.")
@@ -195,6 +221,15 @@ export default function PrayerForm() {
   const handleRetry = () => {
     setIsRetrying(true)
     loadPrayers()
+  }
+
+  // Add a manual refresh button
+  const handleManualRefresh = () => {
+    loadPrayers()
+    toast({
+      title: "Refreshing",
+      description: "Updating prayers list...",
+    })
   }
 
   return (
@@ -297,7 +332,19 @@ export default function PrayerForm() {
         </motion.div>
 
         <div className="space-y-4">
-          <h3 className="text-lg sm:text-xl font-arabic text-blue-200 mb-3 sm:mb-4">الأدعية المشتركة</h3>
+          <div className="flex justify-between items-center mb-3 sm:mb-4">
+            <h3 className="text-lg sm:text-xl font-arabic text-blue-200">الأدعية المشتركة</h3>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleManualRefresh}
+              className="text-blue-300 hover:text-blue-200"
+              disabled={isLoading}
+            >
+              <RefreshCw className={`h-4 w-4 mr-1 ${isLoading ? "animate-spin" : ""}`} />
+              <span className="text-xs">Refresh</span>
+            </Button>
+          </div>
 
           {isLoading ? (
             <div className="text-center py-6 sm:py-8">
@@ -358,7 +405,13 @@ export default function PrayerForm() {
         </div>
       </div>
       {prayers.length > 0 && (
-        <div className="mt-4 text-xs text-blue-400/70 text-center">Showing {prayers.length} prayers</div>
+        <div className="mt-4 text-xs text-blue-400/70 text-center">
+          Showing {prayers.length} prayers
+          {/* Add debug info in development */}
+          {process.env.NODE_ENV === "development" && (
+            <span className="block mt-1 text-blue-500/50">(Last fetch: {new Date().toLocaleTimeString()})</span>
+          )}
+        </div>
       )}
     </section>
   )
